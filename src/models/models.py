@@ -1,5 +1,4 @@
 from datetime import datetime
-from enum import Enum
 from typing import Annotated, List, Optional
 from uuid import UUID
 
@@ -8,13 +7,23 @@ from pydantic import BaseModel, Field, HttpUrl
 # Airflow
 
 
-class AirflowJobStatus(str, Enum):
-    """The possible states of an [Airflow] job."""
+class AirflowJobStatus(BaseModel):
+    """The initial response from the FastAPI service after job submission."""
 
-    PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
+    job_id: Annotated[str, Field(min_length=1, max_length=50)]
+    status: str
+    submitted_at: Annotated[datetime, Field(description="UTC timestamp of job submission")]
+    estimated_completion_time: Annotated[datetime, Field(description="Estimated UTC timestamp of job completion")]
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "job_id": "76",
+                "status": "PROCESSING",
+                "submitted_at": "2023-09-04T12:00:00Z",
+                "estimated_completion_time": "2023-09-04T12:01:00Z",
+            }
+        }
 
 
 # Utils
@@ -31,7 +40,10 @@ class UserPreference(BaseModel):
     """User's preference for a specific category."""
 
     category: Annotated[str, Field(min_length=1, max_length=100)]
-    weight: Annotated[Optional[float], Field(ge=0, le=1)]  # Not using, for now.
+    weight: Annotated[Optional[float], Field(ge=0, le=1, default=None)]  # Set default to None
+
+    class Config:
+        extra = "forbid"  # This prevents any extra fields from being accepted
 
 
 class POIFinderRequest(BaseModel):
@@ -47,34 +59,13 @@ class POIFinderRequest(BaseModel):
         json_schema_extra = {
             "examples": [
                 {
-                    "user_id": "user123",
+                    "user_id": "8236734",
                     "location": {"latitude": 40.7128, "longitude": -74.0060},
                     "preferences": [{"category": "restaurant", "weight": 0.8}, {"category": "museum"}],
                     "max_distance": 5.0,
                     "max_results": 15,
                 }
             ]
-        }
-
-
-class POIFinderResponse(BaseModel):
-    """The initial response from the FastAPI service after job submission."""
-
-    job_id: Annotated[str, Field(min_length=1, max_length=50)]
-    status: AirflowJobStatus
-    submitted_at: Annotated[datetime, Field(description="UTC timestamp of job submission")]
-    estimated_completion_time: Optional[
-        Annotated[datetime, Field(description="Estimated UTC timestamp of job completion")]
-    ]
-
-    class Config:
-        schema_extra = {
-            "example": {
-                "job_id": "76",
-                "status": "PROCESSING",
-                "submitted_at": "2023-09-04T12:00:00Z",
-                "estimated_completion_time": "2023-09-04T12:01:00Z",
-            }
         }
 
 
@@ -133,7 +124,7 @@ class PointOfInterest(BaseModel):
     ]
 
 
-class POIFinderResult(BaseModel):
+class POIFinderResults(BaseModel):
     """Final result of a POI finding job."""
 
     job_id: Annotated[UUID, Field(min_length=1, max_length=50)]

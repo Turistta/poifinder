@@ -1,32 +1,32 @@
 import logging
-from datetime import datetime, timedelta
-from typing import Annotated
-from uuid import uuid4
+from typing import Annotated, Union
 
-import aiohttp
-from fastapi import BackgroundTasks, Body, FastAPI
+from fastapi import Body, Depends, FastAPI, HTTPException, status
+from fastapi.security import HTTPBasicCredentials
 
-from config import settings
-from models.models import (
-    AirflowDAGConf,
-    AirflowJobStatus,
-    POIFinderRequest,
-    POIFinderResponse,
-)
+from middleware import auth_user, get_job_response, retrieve_results, trigger_dag_run
+from models.models import AirflowJobStatus, POIFinderRequest, POIFinderResults
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="POIFinder")
 
 
-@app.post("/find_pois", response_model=POIFinderResponse)
+@app.post("/find_pois", response_model=Union[POIFinderResults, AirflowJobStatus])
 async def find_pois(
-    request: POIFinderRequest,  # type: ignore
-    background_tasks: BackgroundTasks,
+    request: Annotated[POIFinderRequest, Body()],
+    credentials: Annotated[HTTPBasicCredentials, Depends(auth_user)],
 ):
-    pass
+    try:
+        existing_job = await get_job_response(request.user_id)
+        if isinstance(existing_job, AirflowJobStatus):
+            if existing_job.status == "SUCCESS":
+                return await retrieve_results(request.user_id)
+            return existing_job
+        new_job_status = await trigger_dag_run(request, "poi_finder", credentials)  # type: ignore
+        return new_job_status
 
-
-@app.get("/job_status/{job_id}", response_model=POIFinderResponse)
-async def get_job_status(job_id: str):
-    pass
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
