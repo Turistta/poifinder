@@ -5,7 +5,7 @@ from models.airflow_models import AirflowJobStatus
 from models.base_models import HexUUIDString
 from models.request_models import PointOfInterestClientRequest, PointsOfInterestData
 
-router = APIRouter()
+router = APIRouter(prefix="/external")
 
 
 # GET Query POIs
