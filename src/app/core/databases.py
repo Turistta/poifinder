@@ -4,8 +4,7 @@ from typing import Optional
 import redis.asyncio as redis
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure
-
-from app.repositories.abstract_repository import AbstractDatabase
+from repositories.abstract_repository import AbstractDatabase
 
 logger = logging.getLogger(__name__)
 

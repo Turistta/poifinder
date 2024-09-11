@@ -24,4 +24,4 @@ def find_pois():
     show_context()
 
 
-find_pois()
+# find_pois()
