@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Annotated, Optional
 
-from models.base_models import HexUUIDString
 from pydantic import BaseModel, ConfigDict, Field
+
+from .base_models import HexUUIDString
 
 
 class AirflowJobStatus(BaseModel):
@@ -36,12 +37,14 @@ class SyncRequest(BaseModel):
 class SyncResponse(BaseModel):
     """Sync response from the FastAPI endpoint"""
 
-    status: Annotated[str, Field(description="The status of the sync operation (e.g., success or failure)")]
+    status: Annotated[
+        str, Field(description="The status of the sync operation (e.g., success or failure)")
+    ]  # TODO: Use enum
     message: Annotated[str, Field(description="Message providing additional information about the sync result")]
     timestamp: Annotated[str, Field(description="Timestamp of when the operation was completed, in ISO 8601 format")]
     operation_id: Annotated[str, Field(description="Unique identifier for tracking the sync operation")]
 
-    model_config = ConfigDict(
+    model_config = ConfigDict(  # TODO: Placeholder
         json_schema_extra={
             "example": {
                 "status": "SUCCESS",

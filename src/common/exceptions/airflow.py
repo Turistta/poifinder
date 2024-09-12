@@ -1,0 +1,2 @@
+class AirflowException(Exception):
+    pass

@@ -1,6 +1,7 @@
+import sys
 from abc import ABC, abstractmethod
 
-from models.base_models import HexUUIDString
+from common.models.base_models import HexUUIDString
 
 
 class AbstractDatabase(ABC):

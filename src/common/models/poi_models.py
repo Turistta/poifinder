@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Annotated, Dict, List
 
-from models.location_models import Location
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+
+from .location_models import Location
 
 
 class Picture(BaseModel):

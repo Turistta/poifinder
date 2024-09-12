@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import Annotated, Any, Dict, List, Union
 
-from models.airflow_models import AirflowJobStatus
-from models.base_models import IntSeed
-from models.location_models import Coordinates
-from models.poi_models import PointOfInterest
-from models.preference_models import ContextConstraints, Preference
 from pydantic import BaseModel, ConfigDict, Field
+
+from .airflow_models import AirflowJobStatus
+from .base_models import IntSeed
+from .location_models import Coordinates
+from .poi_models import PointOfInterest
+from .preference_models import ContextConstraints, Preference
 
 
 class PointOfInterestClientRequest(BaseModel):

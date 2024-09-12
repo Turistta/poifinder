@@ -1,26 +1,32 @@
-from typing import Annotated, List
+from typing import Annotated
 
-from fastapi import APIRouter, Body
-from models.airflow_models import SyncRequest, SyncResponse
-from models.request_models import PointsOfInterestData
+from fastapi import APIRouter, Body, Query
 
-router = APIRouter(prefix="/internal")
+from common.models.airflow_models import AirflowJobStatus
+from common.models.base_models import HexUUIDString
+from common.models.request_models import (
+    PointOfInterestClientRequest,
+    PointsOfInterestData,
+)
+
+router = APIRouter(prefix="/external")
 
 
-# POST Send batch data structure
-@router.post("/pois", tags=["pois"])
-def create_batch_pois(
-    request: Annotated[
-        List[PointsOfInterestData],
-        Body(),
-    ],
-) -> None:
-    """Endpoint that receives various requests of POI generation for once."""
+# GET Query POIs
+@router.get("/pois", tags=["pois"])
+def get_pois_data(poi_data_hash: Annotated[HexUUIDString, Query()]) -> PointsOfInterestData:
     pass
 
 
-# POST Activate trigger mongodb/redis sync
-@router.post("/sync", tags=["database"])
-def sync_db_cache(request: Annotated[SyncRequest, Body()]) -> SyncResponse:
-    """Endpoint triggered by Airflow scheduler that asks for FastAPI to sync its data."""
+# POST Create POIs
+@router.post("/pois", tags=["pois"])
+def create_pois(
+    request: Annotated[PointOfInterestClientRequest, Body()],
+) -> AirflowJobStatus:
+    pass
+
+
+# GET Query JobStatus
+@router.get("/job", tags=["jobs"])
+def get_job(job_id: Annotated[HexUUIDString, Query()]) -> AirflowJobStatus:
     pass

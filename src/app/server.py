@@ -1,4 +1,9 @@
 import logging
+import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from contextlib import asynccontextmanager
 
 from core.config import settings
@@ -42,8 +47,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="POIFinder", lifespan=lifespan)
 
-app.include_router(internal.router)
 app.include_router(external.router)
+app.include_router(internal.router)
 
 
 @app.get("/", include_in_schema=False)
