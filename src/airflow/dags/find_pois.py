@@ -11,6 +11,7 @@ import aiohttp
 import pendulum
 from airflow.decorators import dag, task
 from airflow.models import Variable
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from common.exceptions.airflow import AirflowException
 from common.models.poi_models import PointOfInterest
@@ -59,7 +60,7 @@ def find_pois():
         Returns:
             Dict[str, Any]: A dictionary containing user data and preferences pulled from the REST API.
         """
-        # data = kwargs["dag_run"].conf
+        data = kwargs["dag_run"].conf
         data = {"mock_data": "test_data"}
         try:
             if not data:
@@ -179,16 +180,17 @@ def find_pois():
         current_count = int(Variable.get("poi_request_count", default_var=0))
         if current_count >= 100:
             Variable.set("poi_request_count", 0)
-            from airflow.api.common.models.experimental.trigger_dag import trigger_dag
+            return True
+        return False
 
-            trigger_dag("sync_databases")
+    sync_trigger = TriggerDagRunOperator(trigger_dag_id="sync_pois", task_id="sync_trigger")
 
     user_data = load_data()
     raw_response = request_pois(conf=user_data)
     parsed_pois = parse_pois(raw_response=raw_response)
     filtered_pois = apply_filtering(parsed_pois=parsed_pois, conf=user_data)
     processed_pois = process_filtered_pois(preference_filtered_pois=filtered_pois)
-    return_results(results=processed_pois) >> check_sync_trigger()
+    return_results(results=processed_pois) >> check_sync_trigger() >> sync_trigger
 
 
 find_pois_dag = find_pois()
