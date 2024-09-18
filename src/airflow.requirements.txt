@@ -11,3 +11,5 @@ six==1.16.0
 time-machine==2.15.0
 tzdata==2024.1
 yarl==1.11.1
+geopandas==0.14.4
+osmnx==1.9.4
