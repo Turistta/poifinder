@@ -9,9 +9,9 @@ import logging
 import aiohttp
 import pendulum
 
+from airflow.sensors.external_task import ExternalTaskSensor
 from airflow.decorators import dag, task
 from airflow.models import Variable
-from airflow.sensors.external import ExternalTaskSensor
 from common.exceptions.airflow import AirflowException
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,6 @@ def sync_request():
     wait_for_find_pois = ExternalTaskSensor(
         task_id="wait_for_find_pois",
         external_dag_id="find_pois",
-        external_id=None,
         timeout=300,
         allowed_states=["success"],
         mode="reschedule",

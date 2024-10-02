@@ -33,16 +33,16 @@ class PointOfInterestClientRequest(BaseModel):
 class AirflowDagTriggerRequest(BaseModel):
     """Request for the Airflow REST API to trigger a DAG run."""
 
-    dag_id: Annotated[str, Field(description="Identifier of the DAG to trigger")]
-    request_date: Annotated[datetime, Field(description="Timestamp of the request")]
-    config: Annotated[PointOfInterestClientRequest, Field(description="Configuration for the DAG run")]
+    #dag_run_id: Annotated[str, Field(description="Identifier of the DAG to trigger")]
+    logical_date: Annotated[str, Field(description="Timestamp of the request")]
+    conf: Annotated[PointOfInterestClientRequest, Field(description="Configuration for the DAG run")]
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "dag_id": "process_poi_request",
-                "request_date": "2023-06-15T14:30:00Z",
-                "config": {
+                #"dag_run_id": "process_poi_request",
+                "logical_date": "2023-06-15T14:30:00Z",
+                "conf": {
                     "location": {"latitude": 40.7128, "longitude": -74.0060},
                     "preferences": [{"category": "restaurant", "weight": 0.8}, {"category": "museum"}],
                     "max_distance": 5.0,
@@ -57,7 +57,7 @@ class PointsOfInterestData(BaseModel):
     """All information related to a specific request of PointOfInterest creation."""
 
     seed: Annotated[IntSeed, Field()]
-    config: Annotated[Union[List[Preference], ContextConstraints], Field()]
+    conf: Annotated[Union[List[Preference], ContextConstraints], Field()]
     timestamp: Annotated[datetime, Field()]
     job_status: Annotated[AirflowJobStatus, Field()]
     results: Annotated[Union[List[PointOfInterest], Dict[str, Any]], Field()]

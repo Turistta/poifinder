@@ -2,8 +2,11 @@ from datetime import datetime
 from typing import Annotated
 
 import aiohttp
+import json
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from services.airflow_service import AirflowService, get_airflow_service
+import random
+import string
 
 from common.models.airflow_models import AirflowJobStatus
 from common.models.base_models import HexUUIDString
@@ -27,12 +30,16 @@ async def create_pois(
     request: Annotated[PointOfInterestClientRequest, Body()],
     airflow_service: Annotated[AirflowService, Depends(get_airflow_service)],
 ) -> AirflowJobStatus:
-    dag_run_data = AirflowDagTriggerRequest(
-        dag_id="find_pois", request_date=datetime.now(), config=request
+    #s = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+    dag_run_data_dict = AirflowDagTriggerRequest(
+        #dag_run_id=s, 
+        logical_date = datetime.now().replace(microsecond=0).isoformat() + 'Z', 
+        conf=request.model_dump()
     ).model_dump()
+    #dag_run_data_str = json.dumps(dag_run_data_dict)
 
     try:
-        dag_run = await airflow_service.trigger_dag("find_pois", dag_run_data)
+        dag_run = await airflow_service.trigger_dag("find_pois", dag_run_data_dict)
     except aiohttp.ClientResponseError as e:
         raise HTTPException(status_code=e.status, detail=f"Failed to trigger DAG: {e.message}")
 

@@ -10,8 +10,8 @@ class AirflowJobStatus(BaseModel):
     """Response from the Airflow REST API. Information on the DAG run from an AirflowDagTriggerRequest."""
 
     job_id: Annotated[HexUUIDString, Field(description="Unique identifier for the Airflow job")]
-    start_date: Annotated[datetime, Field(description="Start time of the DAG run")]
-    end_date: Annotated[Optional[datetime], Field(description="End time of the DAG run")]
+    start_date: Annotated[Optional[str], Field(description="Start time of the DAG run")]
+    end_date: Annotated[Optional[str], Field(description="End time of the DAG run")]
     state: Annotated[str, Field(description="States of DAG. Can be: 'QUEUED', 'RUNNING', 'SUCCESS', 'FAILED'")]
 
     model_config = ConfigDict(

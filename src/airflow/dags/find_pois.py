@@ -1,7 +1,6 @@
 import os
 import sys
 
-from src.common.models.location_models import Coordinates, Location
 
 # Adicionar o diretório de dags ao sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -19,6 +18,7 @@ import pendulum
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from common.models.location_models import Coordinates, Location
 from common.exceptions.airflow import AirflowException
 from common.models.poi_models import PointOfInterest
 
@@ -88,6 +88,7 @@ def find_pois():
             Dict[str, Any]: Um dicionário contendo dados e preferências do usuário extraídos da API REST.
         """
         data = kwargs["dag_run"].conf
+        #data = {"mock_data": "test_data"}
 
         try:
             if not data:
@@ -116,18 +117,22 @@ def find_pois():
             GeoDataFrame: GeoDataFrame contendo dados de POIs.
         """
         location = conf.get("location", {})
-        lat = location.get("lat")
-        lon = location.get("lon")
+        latitude = location.get("latitude")
+        longitude = location.get("longitude")
         radius = conf.get("radius", 1000)
-        if not lat or not lon:
+        if not latitude or not longitude:
             raise ValueError("Coordenadas de localização não fornecidas na configuração.")
 
-        categories = conf.get("preferences", {}).get("categories", [])
+        categories = []
+        for item in conf.get("preferences", []):
+            if isinstance(item, dict):
+                categories.extend(item.get("categories", []))
+
         if not categories:
             categories = ["amenity", "tourism"]
 
         try:
-            point = (lat, lon)
+            point = (latitude, longitude)
             tags = {category: True for category in categories}
             pois = ox.geometries_from_point(point, tags=tags, dist=radius)
             return pois
@@ -213,8 +218,8 @@ def find_pois():
             List[Tuple[PointOfInterest, float]]: List of tuples containing POI objects and their distances from the user.
         """
         location = conf.get("location", {})
-        user_lat = location.get("lat")
-        user_lon = location.get("lon")
+        user_lat = location.get("latitude")
+        user_lon = location.get("longitude")
         if not user_lat or not user_lon:
             raise ValueError("User location not provided in configuration.")
 
