@@ -1,6 +1,7 @@
+import json
 import os
 import sys
-
+import tempfile
 
 # Adicionar o diretório de dags ao sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -18,8 +19,8 @@ import pendulum
 from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from common.models.location_models import Coordinates, Location
 from common.exceptions.airflow import AirflowException
+from common.models.location_models import Coordinates, Location
 from common.models.poi_models import PointOfInterest
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ def parse_opening_hours(opening_hours_string: str) -> Dict[str, str]:
 )
 def find_pois():
     @task
-    def load_data(**kwargs) -> Dict[str, Any]:
+    def load_data(**kwargs) -> dict[str, Any]:
         """
         Carrega os dados e preferências do usuário da configuração da execução da DAG.
 
@@ -88,7 +89,12 @@ def find_pois():
             Dict[str, Any]: Um dicionário contendo dados e preferências do usuário extraídos da API REST.
         """
         data = kwargs["dag_run"].conf
-        #data = {"mock_data": "test_data"}
+        data = {
+            "location": {"latitude": 40.7128, "longitude": -74.006},
+            "maxDistance": 5,
+            "maxResults": 10,
+            "preferences": [{"category": "restaurant", "weight": 0.8}, {"category": "museum", "weight": None}],
+        }
 
         try:
             if not data:
@@ -109,7 +115,7 @@ def find_pois():
             raise
 
     @task
-    def request_pois(conf: Dict[str, Any]) -> gpd.GeoDataFrame:
+    def request_pois(conf: dict[str, Any]) -> str:
         """
         Solicita POIs de uma API externa.
 
@@ -134,21 +140,33 @@ def find_pois():
         try:
             point = (latitude, longitude)
             tags = {category: True for category in categories}
-            pois = ox.geometries_from_point(point, tags=tags, dist=radius)
-            return pois
+            pois = ox.geometries_from_point(point, tags=tags, dist=radius).to_json()
+
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as temp_file:
+                temp_file.write(pois)
+                temp_file_path = temp_file.name
+
+            return temp_file_path
         except Exception as e:
             logger.error(f"Erro ao buscar POIs: {e}")
             raise AirflowException(f"Falha ao buscar POIs: {e}")
 
     @task
-    def parse_pois(pois_gdf: gpd.GeoDataFrame) -> List[PointOfInterest]:
+    def parse_pois(pois_file: str) -> str:
         """
-        Parses raw POI data from a GeoDataFrame into a list of PointOfInterest objects.
+        Parses raw POI data from a file into a list of PointOfInterest objects.
+
         Args:
-            pois_gdf (GeoDataFrame): GeoDataFrame containing POI data.
+            pois_file (str): Path to the file containing raw POI data.
+
         Returns:
-            List[PointOfInterest]: List of parsed POI objects.
+            str: Path to the file containing parsed POI objects.
         """
+        with open(pois_file, "r") as f:
+            pois_json = json.load(f)
+
+        pois_gdf = gpd.GeoDataFrame.from_features(pois_json)
+        print(pois_json)
         try:
             pois_list = []
             for _, row in pois_gdf.iterrows():
@@ -160,11 +178,11 @@ def find_pois():
 
                 # Create location object
                 location = Location(
-                    address=row.get("addr:full", ""),
+                    address=row.get("addr:full"),
                     plus_code="",
                     coordinates=Coordinates(
-                        latitude=row.geometry.y if row.geometry else None, # type: ignore
-                        longitude=row.geometry.x if row.geometry else None, # type: ignore
+                        latitude=row.geometry.y if row.geometry else None,
+                        longitude=row.geometry.x if row.geometry else None,
                     ),
                 )
 
@@ -180,43 +198,63 @@ def find_pois():
                     opening_hours=parse_opening_hours(row.get("opening_hours", "")),
                 )
                 pois_list.append(poi)
-            return pois_list
+
+            # Write parsed POIs to a temporary file
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as temp_file:
+                json.dump([poi.model_dump() for poi in pois_list], temp_file)
+                temp_file_path = temp_file.name
+
+            return temp_file_path
         except Exception as e:
             logger.error(f"Error parsing POIs: {e}")
             raise AirflowException(f"Failed to parse POIs: {e}")
 
     @task
-    def apply_filtering(parsed_pois: List[PointOfInterest], conf: Dict[str, Any]) -> List[PointOfInterest]:
+    def apply_filtering(parsed_pois_file: str, conf: dict[str, Any]) -> str:
         """
         Applies filtering based on user preferences to the parsed POIs.
+
         Args:
-            parsed_pois (List[PointOfInterest]): List of parsed POI objects.
-            conf (Dict[str, Any]): Configuration dictionary containing user preferences.
+            parsed_pois_file (str): Path to the file containing parsed POI objects.
+            conf_file (str): Path to the configuration file.
+
         Returns:
-            List[PointOfInterest]: List of filtered POI objects.
+            str: Path to the file containing filtered POI objects.
         """
+        with open(parsed_pois_file, "r") as f:
+            parsed_pois = [PointOfInterest(**poi) for poi in json.load(f)]
+
         preferences = conf.get("preferences", {})
         preferred_categories = preferences.get("categories", [])
         if not preferred_categories:
-            return parsed_pois
+            filtered_pois = parsed_pois
+        else:
+            filtered_pois = [
+                poi for poi in parsed_pois if any(category in poi.categories for category in preferred_categories)
+            ]
 
-        filtered_pois = [
-            poi for poi in parsed_pois if any(category in poi.categories for category in preferred_categories)
-        ]
-        return filtered_pois
+        # Write filtered POIs to a temporary file
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as temp_file:
+            json.dump([poi.model_dump() for poi in filtered_pois], temp_file)
+            temp_file_path = temp_file.name
+
+        return temp_file_path
 
     @task
-    def process_filtered_pois(
-        preference_filtered_pois: List[PointOfInterest], conf: Dict[str, Any]
-    ) -> List[Tuple[PointOfInterest, float]]:
+    def process_filtered_pois(filtered_pois_file: str, conf: dict[str, Any]) -> str:
         """
         Processes the filtered POIs and calculates their distances from the user's location.
+
         Args:
-            preference_filtered_pois (List[PointOfInterest]): List of POIs filtered by user preferences.
-            conf (Dict[str, Any]): Configuration dictionary containing user location.
+            filtered_pois_file (str): Path to the file containing filtered POI objects.
+            conf_file (str): Path to the configuration file.
+
         Returns:
-            List[Tuple[PointOfInterest, float]]: List of tuples containing POI objects and their distances from the user.
+            str: Path to the file containing processed POI objects with distances.
         """
+        with open(filtered_pois_file, "r") as f:
+            filtered_pois = [PointOfInterest(**poi) for poi in json.load(f)]
+
         location = conf.get("location", {})
         user_lat = location.get("latitude")
         user_lon = location.get("longitude")
@@ -224,7 +262,7 @@ def find_pois():
             raise ValueError("User location not provided in configuration.")
 
         pois_with_distances = []
-        for poi in preference_filtered_pois:
+        for poi in filtered_pois:
             if poi.location.coordinates.latitude and poi.location.coordinates.longitude:
                 distance = haversine_distance(
                     user_lat, user_lon, poi.location.coordinates.latitude, poi.location.coordinates.longitude
@@ -234,19 +272,28 @@ def find_pois():
             pois_with_distances.append((poi, distance))
 
         ranked_pois = sorted(pois_with_distances, key=lambda x: x[1])
-        return ranked_pois
+
+        # Write processed POIs to a temporary file
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as temp_file:
+            json.dump([(poi.model_dump(), distance) for poi, distance in ranked_pois], temp_file)
+            temp_file_path = temp_file.name
+
+        return temp_file_path
 
     @task
-    def return_results(results: List[PointOfInterest]) -> None:
+    def return_results(results_file: str) -> None:
         """
         Retorna a lista final de POIs para o endpoint FastAPI.
 
         Args:
-            results (List[PointOfInterest]): Lista final de POIs processados e ranqueados.
+            results_file (str): Path to the file containing final processed POIs.
         """
+        with open(results_file, "r") as f:
+            results = json.load(f)
+
         fastapi_endpoint = Variable.get("FASTAPI_ENDPOINT") + "/pois"
         headers = {"Content-Type": "application/json"}
-        data = [poi.model_dump() for poi in results]
+        data = [poi for poi, _ in results]
 
         async def send_request():
             async with aiohttp.ClientSession() as session:
@@ -291,11 +338,11 @@ def find_pois():
     )
 
     user_data = load_data()
-    raw_response = request_pois(conf=user_data)  # type: ignore
-    parsed_pois = parse_pois(raw_response)  # type: ignore
-    filtered_pois = apply_filtering(parsed_pois, user_data)  # type: ignore
-    processed_pois = process_filtered_pois(filtered_pois, user_data)  # type: ignore
-    return_results(processed_pois) >> check_sync_trigger() >> sync_trigger  # type: ignore
+    raw_response_file = request_pois(conf=user_data)
+    parsed_pois_file = parse_pois(pois_file=raw_response_file)
+    filtered_pois_file = apply_filtering(parsed_pois_file=parsed_pois_file, conf=user_data)
+    processed_pois_file = process_filtered_pois(filtered_pois_file=filtered_pois_file, conf=user_data)
+    return_results(results_file=processed_pois_file) >> check_sync_trigger() >> sync_trigger
 
 
 find_pois_dag = find_pois()
