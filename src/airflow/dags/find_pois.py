@@ -198,6 +198,8 @@ def find_pois():
         Returns:
             str: Path to the file containing parsed POI objects.
         """
+
+        print("KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK")
         with open(pois_file, "r") as f:
             pois_json = json.load(f)
         pois_gdf = gpd.GeoDataFrame.from_features(pois_json)
@@ -210,7 +212,15 @@ def find_pois():
                 for category in ["amenity", "tourism", "shop", "leisure"]:
                     if row.get(category):
                         categories.append(row[category])
+                
+                print("O erro nessa bosta é aqui kkkkkkkkkkkkkkkkkkkkk")
+                end = row.get("addr:full")
+                if end is None or end != end:
+                    end = ""
+                else:
+                    end = str(end)
 
+<<<<<<< Updated upstream
                 # Construct address from available tags
                 address_parts = []
                 for addr_tag in ["addr:housenumber", "addr:street", "addr:city", "addr:postcode"]:
@@ -238,6 +248,21 @@ def find_pois():
                 # Handle potentially None values
                 name = row.get("name") or "Unnamed Location"
                 place_id = str(row.get("osmid") or "")
+=======
+                address=row.get("addr:full")
+                print(address)
+                print("O erro é no end kkkkkkkkkkkkkkkkkkkkkkkkkkkkk")
+                print(row)
+                # Create location object
+                location = Location(
+                    address=end,
+                    plus_code="",
+                    coordinates=Coordinates(
+                        latitude=row.geometry.y if row.geometry else None,
+                        longitude=row.geometry.x if row.geometry else None,
+                    ),
+                )
+>>>>>>> Stashed changes
 
                 # Create POI object
                 poi = PointOfInterest(
