@@ -1,13 +1,19 @@
+import datetime
 import json
 import os
+import random
 import sys
 import tempfile
+
+from shapely import Point, Polygon
 
 # Adicionar o diretório de dags ao sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import asyncio
 import logging
+import time
+from datetime import datetime
 from math import asin, cos, radians, sin, sqrt
 from typing import Any, Dict, List, Tuple
 
@@ -18,10 +24,13 @@ import pendulum
 
 from airflow.decorators import dag, task
 from airflow.models import Variable
+from airflow.operators.python import get_current_context
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from common.exceptions.airflow import AirflowException
+from common.models.airflow_models import AirflowJobStatus
 from common.models.location_models import Coordinates, Location
 from common.models.poi_models import PointOfInterest
+from common.models.request_models import PointsOfInterestData
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +43,9 @@ default_args = {
     "retries": 1,
     "retry_delay": pendulum.duration(minutes=3),
 }
+
+seed_value = int(time.time()) % 100000
+random.seed(seed_value)
 
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -53,23 +65,48 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 def parse_opening_hours(opening_hours_string: str) -> Dict[str, str]:
     """
     Parses the OpenStreetMap opening_hours string into a dictionary.
-    This is a basic implementation and might need to be expanded based on the complexity of the data.
+    Assumes English input.
     """
-    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    hours_dict = {day: "Closed" for day in days}
+    full_days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    short_days = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+    hours_dict = {
+        day: "0:00 AM - 23:59 PM"
+        for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    }
 
-    if opening_hours_string:
+    if not opening_hours_string:
+        return hours_dict
+
+    try:
         parts = opening_hours_string.split(";")
         for part in parts:
-            if "-" in part:
-                day_range, time_range = part.split(" ", 1)
-                day_start, day_end = day_range.split("-")
-                start_index = days.index(day_start.capitalize())
-                end_index = days.index(day_end.capitalize())
-                for day in days[start_index : end_index + 1]:
-                    hours_dict[day] = time_range.strip()
+            part = part.strip()
+            if not part:
+                continue
 
-    return hours_dict
+            if part.lower().startswith(("mo-su", "all days", "daily", "everyday")):
+                time_range = part.split(" ", 1)[1] if " " in part else "24/7"
+                for day in full_days:
+                    hours_dict[day] = time_range.strip()
+                continue
+
+            if " " in part:
+                day_range, time_range = part.split(" ", 1)
+            else:
+                day_range, time_range = part, "24/7"
+
+            if "-" in day_range:
+                day_start, day_end = day_range.split("-")
+                start_index = short_days.index(day_start[:2].capitalize())
+                end_index = short_days.index(day_end[:2].capitalize())
+                current_days = full_days[start_index : end_index + 1]
+            else:
+                current_days = [full_days[short_days.index(day_range[:2].capitalize())]]
+            for day in current_days:
+                hours_dict[day] = time_range.strip()
+            return hours_dict
+    except:
+        return hours_dict
 
 
 @dag(
@@ -140,6 +177,7 @@ def find_pois():
         try:
             point = (latitude, longitude)
             tags = {category: True for category in categories}
+
             pois = ox.geometries_from_point(point, tags=tags, dist=radius).to_json()
 
             with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as temp_file:
@@ -155,18 +193,15 @@ def find_pois():
     def parse_pois(pois_file: str) -> str:
         """
         Parses raw POI data from a file into a list of PointOfInterest objects.
-
         Args:
             pois_file (str): Path to the file containing raw POI data.
-
         Returns:
             str: Path to the file containing parsed POI objects.
         """
         with open(pois_file, "r") as f:
             pois_json = json.load(f)
-
         pois_gdf = gpd.GeoDataFrame.from_features(pois_json)
-        print(pois_json)
+
         try:
             pois_list = []
             for _, row in pois_gdf.iterrows():
@@ -176,20 +211,38 @@ def find_pois():
                     if row.get(category):
                         categories.append(row[category])
 
-                # Create location object
-                location = Location(
-                    address=row.get("addr:full"),
-                    plus_code="",
-                    coordinates=Coordinates(
-                        latitude=row.geometry.y if row.geometry else None,
-                        longitude=row.geometry.x if row.geometry else None,
-                    ),
-                )
+                # Construct address from available tags
+                address_parts = []
+                for addr_tag in ["addr:housenumber", "addr:street", "addr:city", "addr:postcode"]:
+                    if row.get(addr_tag):
+                        address_parts.append(str(row[addr_tag]))
+                address = ", ".join(address_parts) if address_parts else "Unknown"
+
+                if isinstance(row.geometry, Point):
+                    coords = Coordinates(
+                        latitude=row.geometry.y,
+                        longitude=row.geometry.x,
+                    )
+                elif isinstance(row.geometry, Polygon):
+                    # Use the centroid for the polygon
+                    centroid = row.geometry.centroid
+                    coords = Coordinates(
+                        latitude=centroid.y,
+                        longitude=centroid.x,
+                    )
+                else:
+                    coords = Coordinates(latitude=0, longitude=0)
+
+                location = Location(address=address, plus_code="", coordinates=coords)
+
+                # Handle potentially None values
+                name = row.get("name") or "Unnamed Location"
+                place_id = str(row.get("osmid") or "")
 
                 # Create POI object
                 poi = PointOfInterest(
-                    place_id=str(row.get("osmid", "")),
-                    name=row.get("name", ""),
+                    place_id=place_id,
+                    name=name,
                     location=location,
                     categories=categories,
                     reviews=[],
@@ -203,10 +256,9 @@ def find_pois():
             with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as temp_file:
                 json.dump([poi.model_dump() for poi in pois_list], temp_file)
                 temp_file_path = temp_file.name
-
             return temp_file_path
         except Exception as e:
-            logger.error(f"Error parsing POIs: {e}")
+            logger.warning(f"Error parsing POIs: {e}")
             raise AirflowException(f"Failed to parse POIs: {e}")
 
     @task
@@ -225,7 +277,7 @@ def find_pois():
             parsed_pois = [PointOfInterest(**poi) for poi in json.load(f)]
 
         preferences = conf.get("preferences", {})
-        preferred_categories = preferences.get("categories", [])
+        preferred_categories = [pref["category"] for pref in preferences]
         if not preferred_categories:
             filtered_pois = parsed_pois
         else:
@@ -281,7 +333,7 @@ def find_pois():
         return temp_file_path
 
     @task
-    def return_results(results_file: str) -> None:
+    def return_results(results_file: str, conf: dict[str, Any]) -> None:
         """
         Retorna a lista final de POIs para o endpoint FastAPI.
 
@@ -293,12 +345,26 @@ def find_pois():
 
         fastapi_endpoint = Variable.get("FASTAPI_ENDPOINT") + "/pois"
         headers = {"Content-Type": "application/json"}
-        data = [poi for poi, _ in results]
+
+        context = get_current_context()
+        job_status = AirflowJobStatus(
+            job_id=context["dag_run"].run_id,
+            start_date=context["dag_run"].start_date.isoformat(),
+            end_date=str(datetime.now().isoformat()),
+            state="SUCCESS",
+        )
+        data = PointsOfInterestData(
+            seed=seed_value,
+            conf=conf["preferences"],
+            timestamp=datetime.now().isoformat(),
+            job_status=job_status,
+            results=[poi for poi, _ in results],
+        )
 
         async def send_request():
             async with aiohttp.ClientSession() as session:
                 try:
-                    async with session.post(url=fastapi_endpoint, json=data, headers=headers) as response:
+                    async with session.post(url=fastapi_endpoint, json=data.model_dump(), headers=headers) as response:
                         if response.status != 200:
                             error = await response.text()
                             logger.error(
@@ -342,7 +408,7 @@ def find_pois():
     parsed_pois_file = parse_pois(pois_file=raw_response_file)
     filtered_pois_file = apply_filtering(parsed_pois_file=parsed_pois_file, conf=user_data)
     processed_pois_file = process_filtered_pois(filtered_pois_file=filtered_pois_file, conf=user_data)
-    return_results(results_file=processed_pois_file) >> check_sync_trigger() >> sync_trigger
+    return_results(results_file=processed_pois_file, conf=user_data) >> check_sync_trigger() >> sync_trigger
 
 
 find_pois_dag = find_pois()

@@ -9,9 +9,9 @@ import logging
 import aiohttp
 import pendulum
 
-from airflow.sensors.external_task import ExternalTaskSensor
 from airflow.decorators import dag, task
 from airflow.models import Variable
+from airflow.sensors.external_task import ExternalTaskSensor
 from common.exceptions.airflow import AirflowException
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ default_args = {
 
 
 @dag(
-    dag_id="request_sync_databases",
+    dag_id="sync_pois",
     default_args=default_args,
     description="DAG for syncing Redis and MongoDB databases",
     schedule_interval="0 */2 * * *",  # Every 2 hours

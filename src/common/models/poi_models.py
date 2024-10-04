@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Dict, List
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from .location_models import Location
 
@@ -55,14 +55,24 @@ class PointOfInterest(BaseModel):
     pictures: Annotated[List[Picture], Field(default=[], description="List of pictures for the place")]
     ratings_total: Annotated[int, Field(description="Total number of ratings", ge=0)]
     opening_hours: Annotated[
-        Dict[str, str],
-        Field(
-            default_factory=lambda: {
-                day: "Closed" for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            },
-            description="Opening hours of the place, with day names as keys",
-        ),
+        dict[str, str],
+        Field(description="Opening hours of the place, with day names as keys"),
     ]
+
+    @field_validator("opening_hours", mode="before")
+    @classmethod
+    def validate_opening_hours(cls, v: dict[str, str]):
+        """
+        Validates the opening_hours. If it is empty or None,
+        returns a default opening hours dictionary.
+        """
+        if not v or not isinstance(v, dict):
+            return {
+                day: "0:00 AM - 23:59 PM"
+                for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+            }
+
+        return v
 
     model_config = ConfigDict(
         json_schema_extra={
