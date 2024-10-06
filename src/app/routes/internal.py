@@ -17,6 +17,7 @@ def create_batch_pois(
     ],
 ) -> None:
     """Endpoint that receives various requests of POI generation for once."""
+    # TODO: Save the POIs using hashing etc
     pass
 
 

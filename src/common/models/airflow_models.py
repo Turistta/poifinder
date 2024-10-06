@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .base_models import HexUUIDString
 
@@ -10,9 +10,17 @@ class AirflowJobStatus(BaseModel):
     """Response from the Airflow REST API. Information on the DAG run from an AirflowDagTriggerRequest."""
 
     job_id: Annotated[HexUUIDString, Field(description="Unique identifier for the Airflow job")]
-    start_date: Annotated[Optional[str], Field(description="Start time of the DAG run")]
+    start_date: Annotated[str, Field(description="Start time of the DAG run")]
     end_date: Annotated[Optional[str], Field(description="End time of the DAG run")]
     state: Annotated[str, Field(description="States of DAG. Can be: 'QUEUED', 'RUNNING', 'SUCCESS', 'FAILED'")]
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def parse_date_str(cls, raw: Optional[str]) -> str | None:
+        if not raw:
+            return None
+        parsed_date = datetime.fromisoformat(raw)
+        return parsed_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -37,14 +45,12 @@ class SyncRequest(BaseModel):
 class SyncResponse(BaseModel):
     """Sync response from the FastAPI endpoint"""
 
-    status: Annotated[
-        str, Field(description="The status of the sync operation (e.g., success or failure)")
-    ]  # TODO: Use enum
+    status: Annotated[str, Field(description="The status of the sync operation (e.g., success or failure)")]
     message: Annotated[str, Field(description="Message providing additional information about the sync result")]
     timestamp: Annotated[str, Field(description="Timestamp of when the operation was completed, in ISO 8601 format")]
     operation_id: Annotated[str, Field(description="Unique identifier for tracking the sync operation")]
 
-    model_config = ConfigDict(  # TODO: Placeholder
+    model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "status": "SUCCESS",

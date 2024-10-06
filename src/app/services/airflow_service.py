@@ -15,9 +15,7 @@ app = FastAPI()
 
 class AirflowService:
     def __init__(self):
-        #self.base_url = settings.AIRFLOW_API_ENDPOINT
-        #self.base_url = "http://localhost:8080/api/v1"
-        self.base_url = 'http://airflow-webserver:8080/api/v1'
+        self.base_url = settings.AIRFLOW_API_ENDPOINT
         self.auth_username = "airflow"
         self.auth_password = "airflow"
         self.auth_header = self._get_auth_header()

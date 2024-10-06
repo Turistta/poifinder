@@ -138,7 +138,6 @@ def find_pois():
                 raise ValueError
 
             Variable.set("FASTAPI_ENDPOINT", value=os.environ["FASTAPI_ENDPOINT"])
-            Variable.set("OSM_ENDPOINT", value=os.environ["OSM_ENDPOINT"])
 
             return data
         except ValueError:
@@ -396,8 +395,7 @@ def find_pois():
                                 f"Erro ao enviar POIs para o endpoint. Status: {response.status}, Resposta: {error}"
                             )
                             raise AirflowException(f"Falha ao enviar POIs. Status: {response.status}")
-                        logger.info(f"Enviado com sucesso {len(results)} POIs para o FastAPI")
-
+                        logger.info(f"Enviados {len(results)} POIs para o endpoint")
                         current_count = int(Variable.get("poi_request_count", default_var=0))
                         Variable.set("poi_request_count", current_count + 1)
                 except aiohttp.ClientConnectionError as e:

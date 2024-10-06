@@ -1,10 +1,10 @@
 from datetime import datetime
 from typing import Annotated, Any, Dict, List, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .airflow_models import AirflowJobStatus
-from .base_models import IntSeed
+from .base_models import HexUUIDString, IntSeed
 from .location_models import Coordinates
 from .poi_models import PointOfInterest
 from .preference_models import ContextConstraints, Preference
@@ -33,9 +33,14 @@ class PointOfInterestClientRequest(BaseModel):
 class AirflowDagTriggerRequest(BaseModel):
     """Request for the Airflow REST API to trigger a DAG run."""
 
-    # dag_run_id: Annotated[str, Field(description="Identifier of the DAG to trigger")]
+    dag_run_id: Annotated[HexUUIDString, Field(description="Identifier of the DAG to trigger")]
     logical_date: Annotated[str, Field(description="Timestamp of the request")]
     conf: Annotated[PointOfInterestClientRequest, Field(description="Configuration for the DAG run")]
+
+    @field_validator("logical_date", mode="before")
+    @classmethod
+    def parse_date(cls, raw: datetime) -> str:
+        return raw.replace(microsecond=0).isoformat() + "Z"
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -61,6 +66,12 @@ class PointsOfInterestData(BaseModel):
     timestamp: Annotated[str, Field()]
     job_status: Annotated[AirflowJobStatus, Field()]
     results: Annotated[Union[List[PointOfInterest], Dict[str, Any]], Field()]
+
+    @field_validator("timestamp", mode="before")
+    @classmethod
+    def parse_date_str(cls, raw: str) -> str:
+        parsed_date = datetime.fromisoformat(raw)
+        return parsed_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     model_config = ConfigDict(
         json_schema_extra={

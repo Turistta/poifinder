@@ -1,12 +1,13 @@
+import json
+import random
+import string
+import uuid
 from datetime import datetime
 from typing import Annotated
 
 import aiohttp
-import json
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from services.airflow_service import AirflowService, get_airflow_service
-import random
-import string
 
 from common.models.airflow_models import AirflowJobStatus
 from common.models.base_models import HexUUIDString
@@ -22,6 +23,7 @@ router = APIRouter(prefix="/external")
 # GET Query POIs
 @router.get("/pois", tags=["pois"])
 def get_pois_data(poi_data_hash: Annotated[HexUUIDString, Query()]) -> PointsOfInterestData:
+    # Query repository for the POIs.
     pass
 
 
@@ -30,13 +32,12 @@ async def create_pois(
     request: Annotated[PointOfInterestClientRequest, Body()],
     airflow_service: Annotated[AirflowService, Depends(get_airflow_service)],
 ) -> AirflowJobStatus:
-    #s = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
+    run_id = uuid.uuid4().hex
     dag_run_data_dict = AirflowDagTriggerRequest(
-        #dag_run_id=s, 
-        logical_date = datetime.now().replace(microsecond=0).isoformat() + 'Z', 
-        conf=request.model_dump()
+        dag_run_id=run_id,
+        logical_date=datetime.now(),  # type: ignore
+        conf=request,
     ).model_dump()
-    #dag_run_data_str = json.dumps(dag_run_data_dict)
 
     try:
         dag_run = await airflow_service.trigger_dag("find_pois", dag_run_data_dict)
@@ -45,7 +46,7 @@ async def create_pois(
 
     return AirflowJobStatus(
         job_id=dag_run["dag_run_id"],
-        start_date=dag_run["start_date"],
+        start_date=dag_run["logical_date"],
         end_date=dag_run.get("end_date"),
         state=dag_run["state"],
     )
