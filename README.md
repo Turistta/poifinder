@@ -1,4 +1,4 @@
-# POIFinder
+# Microsserviço de Seleção de POIs
 
 ## Introdução
 
